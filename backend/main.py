@@ -98,22 +98,19 @@ def chat(body: ChatRequest):
     # A complete qualification produces a concrete recommendation instead of another question.
     if lead["completed"] == 5:
         return {"reply":recommendation(lead), "llm_ms":round((time.perf_counter()-start)*1000), "lead":lead, "recommended":True}
-    next_question = next(question for key,question in FIELDS if key == lead["next_field"])
-    conversation = "\n".join(f"{'Homeowner' if m.role == 'user' else 'Shekhar AI'}: {m.content}" for m in turns)
-    prompt = f"{conversation}\nHomeowner: {body.message}\nShekhar AI:"
-    data = json.dumps({"model":"gemma3:4b","system":SYSTEM + "\\nThe next qualification question is: " + next_question + " Answer any direct homeowner question briefly, then ask this exact next question. Do not ask other qualification questions.","prompt":prompt,
-                       "stream":False,"options":{"num_predict":120,"temperature":0.5}}).encode()
-    try:
-        req = urllib.request.Request("http://localhost:11434/api/generate", data=data,
-                                     headers={"Content-Type":"application/json"})
-        with urllib.request.urlopen(req, timeout=120) as response:
-            answer = json.load(response)["response"].strip()
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"Local Ollama unavailable: {exc}")
-    if next_question.lower() not in answer.lower():
-        answer = answer.rstrip() + " " + next_question
-    return {"reply":answer, "llm_ms":round((time.perf_counter()-start)*1000),
-            "lead":lead}
+    next_question = next(question for key, question in FIELDS if key == lead["next_field"])
+    # Deterministic guided questions avoid Gemma repeating the initial greeting,
+    # re-asking completed fields, or asking several qualification questions at once.
+    acknowledgements = {
+        "budget": f"Great, you're planning a {lead['project'].lower()} remodel!",
+        "scope": "Thanks, that gives me a sense of your budget.",
+        "timeline": "Got it, I understand what you'd like to remodel.",
+        "location": "That timeline is helpful."
+    }
+    prefix = acknowledgements.get(lead["next_field"], "I'd be happy to help plan your remodel.")
+    reply = prefix + " " + next_question
+    return {"reply": reply, "llm_ms": round((time.perf_counter()-start)*1000),
+            "lead": lead}
 
 class SpeechRequest(BaseModel):
     text: str = Field(min_length=1, max_length=1500)
