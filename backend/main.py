@@ -50,12 +50,20 @@ def extract_lead(history, message):
     lower = combined.lower()
     project = "Kitchen" if "kitchen" in lower else "Bathroom" if "bathroom" in lower else None
     budget_match = re.search(r"(?:\$\s*)?\d{1,3}(?:,\d{3})+(?:\.\d+)?|\$\s*\d{3,7}|\b\d{2,3}\s?k\b", combined, re.I)
+    # Chrome speech recognition commonly returns words rather than digits.
+    spoken = combined.lower().replace("-", " ")
+    spoken_budget = None
+    number_words = {"ten":10,"twenty":20,"thirty":30,"forty":40,"fifty":50,"sixty":60,"seventy":70,"eighty":80,"ninety":90}
+    spoken_match = re.search(r"\\b(ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:\\s+(one|two|three|four|five|six|seven|eight|nine))?\\s+thousand(?:\\s+dollars?)?\\b", spoken)
+    if spoken_match:
+        units = {"one":1,"two":2,"three":3,"four":4,"five":5,"six":6,"seven":7,"eight":8,"nine":9}
+        spoken_budget = "$" + format((number_words[spoken_match.group(1)] + units.get(spoken_match.group(2), 0))*1000, ",")
     timeline_match = re.search(r"(?:next|within|in)\s+\d+\s+(?:days?|weeks?|months?)|as soon as possible|\basap\b|this (?:month|year|summer|winter|fall|spring)|next (?:month|year|summer|winter|fall|spring)|\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\b", lower)
     scope_terms = ["cabinets","countertops","flooring","tile","shower","bathtub","sink","appliances","plumbing","painting","layout","full remodel","complete renovation","everything","full kitchen","full bathroom"]
     scope = ", ".join(term for term in scope_terms if term in lower) or None
     location_match = re.search(r"(?:located in|property is in|house is in|home is in|i live in|i\x27m in|i am in)\s+([A-Za-z][A-Za-z .-]{1,40})(?=[,.!?]|$)", combined, re.I)
     location = location_match.group(1).strip() if location_match else None
-    lead = {"project":project,"budget":budget_match.group(0) if budget_match else None,"scope":scope,"timeline":timeline_match.group(0) if timeline_match else None,"location":location}
+    lead = {"project":project,"budget":budget_match.group(0) if budget_match else spoken_budget,"scope":scope,"timeline":timeline_match.group(0) if timeline_match else None,"location":location}
     # Associate a short reply with the field explicitly asked in the preceding AI turn.
     # Do not infer location from an arbitrary utterance.
     for i, turn in enumerate(history):
