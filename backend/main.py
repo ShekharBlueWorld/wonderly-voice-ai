@@ -74,6 +74,8 @@ def extract_lead(history, message):
                     lead["timeline"] = answer
                 elif key == "budget" and not lead["budget"] and re.search(r"\\d", answer):
                     lead["budget"] = answer
+    if not lead["budget"] and re.fullmatch(r"\s*\$?\s*\d{4,7}\s*", message):
+        lead["budget"] = message.strip()
     lead["completed"] = sum(bool(lead[key]) for key,_ in FIELDS)
     lead["next_field"] = next((key for key,_ in FIELDS if not lead[key]), None)
     return lead
