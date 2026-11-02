@@ -61,6 +61,7 @@ def health():
 def chat(body: ChatRequest):
     start = time.perf_counter()
     turns = body.history[-12:]
+    lead = extract_lead(turns, body.message)
     conversation = "\n".join(f"{'Homeowner' if m.role == 'user' else 'Shekhar AI'}: {m.content}" for m in turns)
     prompt = f"{conversation}\nHomeowner: {body.message}\nShekhar AI:"
     data = json.dumps({"model":"gemma3:4b","system":SYSTEM,"prompt":prompt,
