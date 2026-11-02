@@ -110,10 +110,38 @@ def extract_lead(history, message):
     return lead
 
 def recommendation(lead):
-    return (f"Thank you, {lead['name']}! For your {lead['project'].lower()} remodel in {lead['location']}, "
-            f"with a budget of {lead['budget']} and a desired start of {lead['timeline']}, "
-            f"I recommend a design consultation focused on {lead['scope']}. "
-            "Would you like to request a consultation? I cannot confirm an appointment in this demo.")
+    project = lead["project"].lower()
+    scope = lead["scope"].lower()
+    if project == "kitchen":
+        suggestion = ("For cabinetry, consider refinishing or refacing existing cabinets, "
+                      "updating hardware, and evaluating selective countertop or lighting upgrades."
+                      if "cabinet" in scope else
+                      "Consider prioritizing the highest-impact cosmetic upgrades, such as cabinet finishes, lighting, and surfaces, before major layout changes.")
+    else:
+        suggestion = ("Consider prioritizing flooring, fixtures, and surface finishes, "
+                      "while checking whether plumbing or waterproofing needs attention.")
+    return (f"Thanks, {lead['name']}! For your {project} project in {lead['location']}, "
+            f"with a budget of {lead['budget']} and a target start of {lead['timeline']}, "
+            f"here's my suggestion: {suggestion} "
+            "These are preliminary ideas, not a price quote. "
+            "Would you like me to prepare a design consultation request?")
+
+def consultation_reply(history, message, lead):
+    if not history:
+        return None
+    previous = history[-1].content.lower() if history[-1].role == "assistant" else ""
+    lower = message.strip().lower()
+    if "consultation request" in previous and re.fullmatch(r"(yes|yes please|sure|okay|ok|absolutely|please do|sounds good)[.! ]*",lower):
+        return ("Excellent! I'll prepare a consultation request using the details you've shared. "
+                "What's the best email address to reach you?")
+    if "email address" in previous:
+        match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}",message)
+        if match:
+            return (f"Thank you! I've prepared a consultation request for {lead['project'].lower()} remodeling "
+                    f"in {lead['location']} with your {lead['budget']} budget. "
+                    "This is a demo lead summary; no request has been sent to a contractor.")
+        return "Sorry, I didn't catch a valid email address. Could you please repeat it?"
+    return None
 
 @app.get("/api/health")
 def health():
@@ -123,6 +151,9 @@ def health():
 def chat(body: ChatRequest):
     start = time.perf_counter()
     lead = extract_lead(body.history[-30:], body.message)
+    followup = consultation_reply(body.history, body.message, lead) if lead["completed"] == len(FIELDS) else None
+    if followup:
+        return {"reply":followup,"llm_ms":round((time.perf_counter()-start)*1000),"lead":lead,"recommended":True}
     if lead["completed"] == len(FIELDS):
         reply = recommendation(lead)
         return {"reply":reply,"llm_ms":round((time.perf_counter()-start)*1000),"lead":lead,"recommended":True}
