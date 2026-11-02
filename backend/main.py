@@ -1,5 +1,9 @@
 """Local Wonderly Voice AI API. No paid cloud APIs."""
 import json
+import io
+import wave
+import threading
+from collections import OrderedDict
 import re
 import subprocess
 import sys
@@ -228,22 +232,80 @@ def chat(body: ChatRequest):
 
     return {"reply":prefix+" "+question,"llm_ms":round((time.perf_counter()-start)*1000),"lead":lead}
 
+# Keep the voice model resident; reuse generated audio for repeated prompts.
+_VOICE = None
+_VOICE_ERROR = None
+_VOICE_LOCK = threading.Lock()
+_CACHE_LOCK = threading.Lock()
+_AUDIO_CACHE = OrderedDict()
+_CACHE_LIMIT = 64
+
+def get_voice():
+    global _VOICE, _VOICE_ERROR
+    if _VOICE is not None:
+        return _VOICE
+    with _VOICE_LOCK:
+        if _VOICE is None:
+            model = next((p for p in MALE_MODELS if p.exists()), None)
+            if model is None:
+                raise RuntimeError("Piper voice model is not installed")
+            try:
+                from piper.voice import PiperVoice
+                _VOICE = PiperVoice.load(str(model))
+                _VOICE_ERROR = None
+            except Exception as exc:
+                _VOICE_ERROR = str(exc)
+                raise
+    return _VOICE
+
+def synthesize_audio(text):
+    voice = get_voice()
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_file:
+        voice.synthesize(text, wav_file)
+    return buffer.getvalue()
+
+@app.on_event("startup")
+def preload_voice():
+    # Warm the model once on server startup, before the first conversation.
+    try:
+        get_voice()
+    except Exception as exc:
+        print(f"Piper preload failed; speech will report the error: {exc}", file=sys.stderr)
+
 class SpeechRequest(BaseModel):
     text: str = Field(min_length=1, max_length=1500)
 
 @app.post("/api/speak")
 def speak(body: SpeechRequest):
-    model = next((p for p in MALE_MODELS if p.exists()), None)
-    if not model:
-        raise HTTPException(status_code=503, detail="Install voice/models/en_US-ryan-medium.onnx and its .json file")
-    import uuid
-    path = AUDIO_DIR / f"{uuid.uuid4().hex}.wav"
+    from fastapi.responses import Response
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Speech text cannot be blank")
     start = time.perf_counter()
+    with _CACHE_LOCK:
+        cached = _AUDIO_CACHE.get(text)
+        if cached is not None:
+            _AUDIO_CACHE.move_to_end(text)
+    if cached is not None:
+        return Response(cached, media_type="audio/wav",
+                        headers={"X-TTS-Synthesis-Ms": "0", "X-TTS-Cache": "HIT",
+                                 "Access-Control-Expose-Headers": "X-TTS-Synthesis-Ms, X-TTS-Cache"})
     try:
-        subprocess.run([sys.executable,"-m","piper","--model",str(model),
-                        "--output-file",str(path)], input=body.text,
-                       text=True, check=True, capture_output=True, timeout=90)
+        # Serialize model inference: PiperVoice is shared across requests.
+        with _VOICE_LOCK:
+            # get_voice() acquires this lock during first load; startup preloads it.
+            if _VOICE is None:
+                raise RuntimeError(_VOICE_ERROR or "Piper model was not loaded")
+            audio_bytes = synthesize_audio(text)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Speech generation failed: {exc}")
     synthesis_ms = round((time.perf_counter() - start) * 1000)
-    return FileResponse(path, media_type="audio/wav", filename="shekhar-ai.wav", headers={"X-TTS-Synthesis-Ms": str(synthesis_ms), "Access-Control-Expose-Headers": "X-TTS-Synthesis-Ms"})
+    with _CACHE_LOCK:
+        _AUDIO_CACHE[text] = audio_bytes
+        _AUDIO_CACHE.move_to_end(text)
+        while len(_AUDIO_CACHE) > _CACHE_LIMIT:
+            _AUDIO_CACHE.popitem(last=False)
+    return Response(audio_bytes, media_type="audio/wav",
+                    headers={"X-TTS-Synthesis-Ms": str(synthesis_ms), "X-TTS-Cache": "MISS",
+                             "Access-Control-Expose-Headers": "X-TTS-Synthesis-Ms, X-TTS-Cache"})
