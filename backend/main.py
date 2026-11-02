@@ -238,7 +238,12 @@ _VOICE_ERROR = None
 _VOICE_LOCK = threading.Lock()
 _CACHE_LOCK = threading.Lock()
 _AUDIO_CACHE = OrderedDict()
-_CACHE_LIMIT = 64
+_CACHE_LIMIT = 128
+WELCOME_TEXT = "Hi! I'm Shekhar AI, your virtual remodeling consultant. May I have your name?"
+PREWARM_TEXTS = [WELCOME_TEXT, "Nice to meet you!", "Sounds good!", "Got it."]
+
+def cache_key(text):
+    return " ".join(text.split())
 
 def get_voice():
     global _VOICE, _VOICE_ERROR
@@ -270,6 +275,18 @@ def preload_voice():
     # Warm the model once on server startup, before the first conversation.
     try:
         get_voice()
+        def prime():
+            for phrase in PREWARM_TEXTS:
+                try:
+                    key = cache_key(phrase)
+                    with _VOICE_LOCK:
+                        audio = synthesize_audio(phrase)
+                    with _CACHE_LOCK:
+                        _AUDIO_CACHE[key] = audio
+                        _AUDIO_CACHE.move_to_end(key)
+                except Exception as exc:
+                    print(f"Piper audio prewarm failed: {exc}", file=sys.stderr)
+        threading.Thread(target=prime, daemon=True).start()
     except Exception as exc:
         print(f"Piper preload failed; speech will report the error: {exc}", file=sys.stderr)
 
@@ -279,7 +296,7 @@ class SpeechRequest(BaseModel):
 @app.post("/api/speak")
 def speak(body: SpeechRequest):
     from fastapi.responses import Response
-    text = body.text.strip()
+    text = cache_key(body.text)
     if not text:
         raise HTTPException(status_code=422, detail="Speech text cannot be blank")
     start = time.perf_counter()
