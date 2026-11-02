@@ -243,7 +243,7 @@ _CACHE_LOCK = threading.Lock()
 _AUDIO_CACHE = OrderedDict()
 _CACHE_LIMIT = 256
 WELCOME_TEXT = "Hi! I'm Shekhar AI, your virtual remodeling consultant. May I have your name?"
-PREWARM_TEXTS = [WELCOME_TEXT, "Nice to meet you!", "Sounds good!", "Got it."] + [question for _, question in FIELDS]
+PREWARM_TEXTS = [WELCOME_TEXT, "Sounds good!", "Got it.", "That helps, thanks.", "Perfect, one last question.", "Great, just two quick details left.", "I\u0027d be happy to help.", "Sorry, I didn\u0027t catch that clearly. Could you please repeat it?"] + [question for _, question in FIELDS]
 
 def cache_key(text):
     return " ".join(text.split())
@@ -270,7 +270,7 @@ def synthesize_audio(text):
     voice = get_voice()
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as wav_file:
-        voice.synthesize_wav(text, wav_file, syn_config=SynthesisConfig(length_scale=1.12))
+        voice.synthesize_wav(text, wav_file, syn_config=SynthesisConfig(length_scale=1.05))
     return buffer.getvalue()
 
 @app.on_event("startup")
