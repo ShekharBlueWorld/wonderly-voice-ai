@@ -49,11 +49,11 @@ def extract_lead(history, message):
     combined = " ".join(user_turns)
     lower = combined.lower()
     project = "Kitchen" if "kitchen" in lower else "Bathroom" if "bathroom" in lower else None
-    budget_match = re.search(r"\\$\\s?[\\d,]+(?:\\s?[kK])?|\\b\\d{2,3}\\s?k\\b", combined, re.I)
-    timeline_match = re.search(r"(?:next|within|in)\\s+\\d+\\s+(?:days?|weeks?|months?)|as soon as possible|\\basap\\b|this (?:month|year|summer|winter|fall|spring)|next (?:month|year|summer|winter|fall|spring)|\\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\\b", lower)
+    budget_match = re.search(r"(?:\$\s*)?\d{1,3}(?:,\d{3})+(?:\.\d+)?|\$\s*\d{3,7}|\b\d{2,3}\s?k\b", combined, re.I)
+    timeline_match = re.search(r"(?:next|within|in)\s+\d+\s+(?:days?|weeks?|months?)|as soon as possible|\basap\b|this (?:month|year|summer|winter|fall|spring)|next (?:month|year|summer|winter|fall|spring)|\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\b", lower)
     scope_terms = ["cabinets","countertops","flooring","tile","shower","bathtub","sink","appliances","plumbing","painting","layout","full remodel","complete renovation","everything","full kitchen","full bathroom"]
     scope = ", ".join(term for term in scope_terms if term in lower) or None
-    location_match = re.search(r"(?:located in|property is in|house is in|home is in|i live in|i'm in|i am in)\\s+([A-Za-z][A-Za-z .-]{1,40})(?=[,.!?]|$)", combined, re.I)
+    location_match = re.search(r"(?:located in|property is in|house is in|home is in|i live in|i\x27m in|i am in)\s+([A-Za-z][A-Za-z .-]{1,40})(?=[,.!?]|$)", combined, re.I)
     location = location_match.group(1).strip() if location_match else None
     lead = {"project":project,"budget":budget_match.group(0) if budget_match else None,"scope":scope,"timeline":timeline_match.group(0) if timeline_match else None,"location":location}
     # Associate a short reply with the field explicitly asked in the preceding AI turn.
@@ -72,7 +72,7 @@ def extract_lead(history, message):
                     lead["scope"] = answer
                 elif key == "timeline" and not lead["timeline"] and len(answer) < 100:
                     lead["timeline"] = answer
-                elif key == "budget" and not lead["budget"] and re.search(r"\\d", answer):
+                elif key == "budget" and not lead["budget"] and re.search(r"\d", answer):
                     lead["budget"] = answer
     if not lead["budget"] and re.fullmatch(r"\s*\$?\s*\d{1,3}(?:,\d{3})+\s*|\s*\$?\s*\d{4,7}\s*", message):
         lead["budget"] = message.strip()
