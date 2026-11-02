@@ -242,7 +242,7 @@ _CACHE_LOCK = threading.Lock()
 _AUDIO_CACHE = OrderedDict()
 _CACHE_LIMIT = 256
 WELCOME_TEXT = "Hi! I'm Shekhar AI, your virtual remodeling consultant. May I have your name?"
-PREWARM_TEXTS = [WELCOME_TEXT, "Nice to meet you!", "Sounds good!", "Got it."]
+PREWARM_TEXTS = [WELCOME_TEXT, "Nice to meet you!", "Sounds good!", "Got it."] + [question for _, question in FIELDS]
 
 def cache_key(text):
     return " ".join(text.split())
