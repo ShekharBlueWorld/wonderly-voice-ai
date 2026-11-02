@@ -36,6 +36,7 @@ class ChatRequest(BaseModel):
     history: list[Message] = Field(default_factory=list, max_length=30)
 
 FIELDS = [
+    ("name", "May I have your name?"),
     ("project", "Are you planning a kitchen remodel or a bathroom remodel?"),
     ("budget", "What approximate budget are you comfortable investing in the project?"),
     ("scope", "What would you like to change — for example cabinets, countertops, flooring, shower, or the full room?"),
@@ -43,58 +44,69 @@ FIELDS = [
     ("location", "Which city is the property located in?")
 ]
 
+def parse_budget(value):
+    s = value.lower().replace("-", " ").strip()
+    digits = re.search(r"(?<!\\d)(?:\\$\\s*)?(\\d{1,3}(?:,\\d{3})+|\\d{4,7}|\\d{2,3}\\s*k)(?!\\d)", s)
+    if digits:
+        raw = digits.group(1).replace(",", "").replace(" ", "")
+        amount = int(raw[:-1])*1000 if raw.endswith("k") else int(raw)
+        return f"${amount:,}" if amount >= 1000 else None
+    tens = {"ten":10,"twenty":20,"thirty":30,"forty":40,"fifty":50,"sixty":60,"seventy":70,"eighty":80,"ninety":90}
+    ones = {"one":1,"two":2,"three":3,"four":4,"five":5,"six":6,"seven":7,"eight":8,"nine":9}
+    match = re.search(r"\\b(" + "|".join(tens) + r")(?:\\s+(" + "|".join(ones) + r"))?\\s+thousand\\b",s)
+    if match:
+        return f"${(tens[match.group(1)]+ones.get(match.group(2),0))*1000:,}"
+    return None
+
+def answer_field(key, value):
+    s = value.strip(" .,!?:")
+    low = s.lower()
+    if not s:
+        return None
+    if key == "name":
+        candidate = re.sub(r"^(?:my name is|i am|i'm|it's|this is|call me)\\s+", "", s, flags=re.I).strip()
+        return candidate.title() if re.fullmatch(r"[A-Za-z][A-Za-z '-]{0,40}",candidate) and len(candidate.split()) <= 4 else None
+    if key == "project":
+        return "Kitchen" if "kitchen" in low else "Bathroom" if "bathroom" in low else None
+    if key == "budget":
+        return parse_budget(s)
+    if key == "scope":
+        return s[:140] if len(s) <= 140 else None
+    if key == "timeline":
+        return s[:80] if low in ("today","tomorrow","now","asap","immediately") or re.search(r"\\b(next|this|within|in|week|month|year|spring|summer|fall|winter|january|february|march|april|may|june|july|august|september|october|november|december)\\b|\\d",low) else None
+    if key == "location":
+        candidate = re.sub(r"^(?:i live in|i'm in|in|it's in|the property is in)\\s+", "", s, flags=re.I)
+        return candidate.title() if re.fullmatch(r"[A-Za-z][A-Za-z .'-]{1,50}",candidate) else None
+
 def extract_lead(history, message):
-    """Extract the latest explicit answer, including answers to guided questions."""
-    user_turns = [m.content for m in history if m.role == "user"] + [message]
-    combined = " ".join(user_turns)
-    lower = combined.lower()
-    project = "Kitchen" if "kitchen" in lower else "Bathroom" if "bathroom" in lower else None
-    budget_match = re.search(r"(?:\$\s*)?\d{1,3}(?:,\d{3})+(?:\.\d+)?|\$\s*\d{3,7}|\b\d{2,3}\s?k\b", combined, re.I)
-    # Chrome speech recognition commonly returns words rather than digits.
-    spoken = combined.lower().replace("-", " ")
-    spoken_budget = None
-    number_words = {"ten":10,"twenty":20,"thirty":30,"forty":40,"fifty":50,"sixty":60,"seventy":70,"eighty":80,"ninety":90}
-    spoken_match = re.search(r"\\b(ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:\\s+(one|two|three|four|five|six|seven|eight|nine))?\\s+thousand(?:\\s+dollars?)?\\b", spoken)
-    if spoken_match:
-        units = {"one":1,"two":2,"three":3,"four":4,"five":5,"six":6,"seven":7,"eight":8,"nine":9}
-        spoken_budget = "$" + format((number_words[spoken_match.group(1)] + units.get(spoken_match.group(2), 0))*1000, ",")
-    timeline_match = re.search(r"(?:next|within|in)\s+\d+\s+(?:days?|weeks?|months?)|as soon as possible|\basap\b|this (?:month|year|summer|winter|fall|spring)|next (?:month|year|summer|winter|fall|spring)|\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\b", lower)
-    scope_terms = ["cabinets","countertops","flooring","tile","shower","bathtub","sink","appliances","plumbing","painting","layout","full remodel","complete renovation","everything","full kitchen","full bathroom"]
-    scope = ", ".join(term for term in scope_terms if term in lower) or None
-    location_match = re.search(r"(?:located in|property is in|house is in|home is in|i live in|i\x27m in|i am in)\s+([A-Za-z][A-Za-z .-]{1,40})(?=[,.!?]|$)", combined, re.I)
-    location = location_match.group(1).strip() if location_match else None
-    lead = {"project":project,"budget":budget_match.group(0) if budget_match else spoken_budget,"scope":scope,"timeline":timeline_match.group(0) if timeline_match else None,"location":location}
-    # Associate a short reply with the field explicitly asked in the preceding AI turn.
-    # Do not infer location from an arbitrary utterance.
-    for i, turn in enumerate(history):
-        if turn.role != "assistant" or i + 1 >= len(history) or history[i+1].role != "user":
+    lead = {key:None for key,_ in FIELDS}
+    # Reconstruct each answer from the assistant question immediately before it.
+    turns = list(history) + [Message(role="user", content=message)]
+    for i, turn in enumerate(turns):
+        if turn.role != "user":
             continue
-        answer = history[i+1].content.strip()
-        for key, question in FIELDS:
-            if question.lower() in turn.content.lower() and answer:
-                if key == "location" and not lead["location"]:
-                    candidate = re.sub(r"^(?:i live in|i'm in|in|it's in|the property is in)\\s+", "", answer, flags=re.I).strip(" .,!") 
-                    if re.fullmatch(r"[A-Za-z][A-Za-z .-]{1,45}", candidate):
-                        lead["location"] = candidate
-                elif key == "scope" and not lead["scope"] and len(answer) < 180:
-                    lead["scope"] = answer
-                elif key == "timeline" and not lead["timeline"] and len(answer) < 100:
-                    lead["timeline"] = answer
-                elif key == "budget" and not lead["budget"] and re.search(r"\d", answer):
-                    lead["budget"] = answer
-    if not lead["budget"] and re.fullmatch(r"\s*\$?\s*\d{1,3}(?:,\d{3})+\s*|\s*\$?\s*\d{4,7}\s*", message):
-        lead["budget"] = message.strip()
+        previous = turns[i-1].content.lower() if i and turns[i-1].role == "assistant" else ""
+        asked = next((key for key, question in FIELDS if question.lower() in previous), None)
+        if not asked and i == 1 and "name" in previous:
+            asked = "name"
+        if asked:
+            value = answer_field(asked, turn.content)
+            if value:
+                lead[asked] = value
+        # Also recognize explicit statements without overwriting the conversational state.
+        if not lead["project"] and re.search(r"\\b(kitchen|bathroom)\\b",turn.content,re.I):
+            lead["project"] = answer_field("project",turn.content)
+        if not lead["budget"]:
+            lead["budget"] = parse_budget(turn.content)
     lead["completed"] = sum(bool(lead[key]) for key,_ in FIELDS)
-    lead["next_field"] = next((key for key,_ in FIELDS if not lead[key]), None)
+    lead["next_field"] = next((key for key,_ in FIELDS if not lead[key]),None)
     return lead
 
 def recommendation(lead):
-    scope = lead["scope"]
-    return (f"Based on your {lead['project'].lower()} project in {lead['location']}, "
-            f"with a budget of {lead['budget']} and a target start of {lead['timeline']}, "
-            f"I recommend starting with a design consultation to review {scope}, "
-            "prioritize the highest-impact improvements, and validate the budget and timeline with a local professional. "
-            "Would you like to request a consultation? This demo cannot confirm an appointment.")
+    return (f"Thank you, {lead['name']}! For your {lead['project'].lower()} remodel in {lead['location']}, "
+            f"with a budget of {lead['budget']} and a desired start of {lead['timeline']}, "
+            f"I recommend a design consultation focused on {lead['scope']}. "
+            "Would you like to request a consultation? I cannot confirm an appointment in this demo.")
 
 @app.get("/api/health")
 def health():
@@ -103,24 +115,20 @@ def health():
 @app.post("/api/chat")
 def chat(body: ChatRequest):
     start = time.perf_counter()
-    turns = body.history[-12:]
-    lead = extract_lead(turns, body.message)
-    # A complete qualification produces a concrete recommendation instead of another question.
-    if lead["completed"] == 5:
-        return {"reply":recommendation(lead), "llm_ms":round((time.perf_counter()-start)*1000), "lead":lead, "recommended":True}
-    next_question = next(question for key, question in FIELDS if key == lead["next_field"])
-    # Deterministic guided questions avoid Gemma repeating the initial greeting,
-    # re-asking completed fields, or asking several qualification questions at once.
-    acknowledgements = {
-        "budget": f"Great, you're planning a {lead['project'].lower()} remodel!",
-        "scope": "Thanks, that gives me a sense of your budget.",
-        "timeline": "Got it, I understand what you'd like to remodel.",
-        "location": "That timeline is helpful."
-    }
-    prefix = acknowledgements.get(lead["next_field"], "I'd be happy to help plan your remodel.")
-    reply = prefix + " " + next_question
-    return {"reply": reply, "llm_ms": round((time.perf_counter()-start)*1000),
-            "lead": lead}
+    lead = extract_lead(body.history[-30:], body.message)
+    if lead["completed"] == len(FIELDS):
+        reply = recommendation(lead)
+        return {"reply":reply,"llm_ms":round((time.perf_counter()-start)*1000),"lead":lead,"recommended":True}
+    next_field = lead["next_field"]
+    question = dict(FIELDS)[next_field]
+    prefix = {
+        "project":f"Nice to meet you, {lead['name']}!",
+        "budget":f"Great, {lead['name']} — a {lead['project'].lower()} remodel!",
+        "scope":f"Thanks, I've noted your budget of {lead['budget']}.",
+        "timeline":"Got it, I've noted your remodeling priorities.",
+        "location":"Thanks, I've noted your preferred start date."
+    }.get(next_field,"I'd be happy to help.")
+    return {"reply":prefix+" "+question,"llm_ms":round((time.perf_counter()-start)*1000),"lead":lead}
 
 class SpeechRequest(BaseModel):
     text: str = Field(min_length=1, max_length=1500)
