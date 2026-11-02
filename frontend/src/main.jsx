@@ -49,7 +49,7 @@ function App(){
    const data=await response.json();if(!response.ok)throw Error(data.detail||'Chat failed');
    setMessages(prev=>[...prev,{role:'assistant',content:data.reply}]);setLlm(data.llm_ms);setLead(data.lead);
    if(!mutedRef.current){await playSpeech(data.reply,start);}else{setSamples(prev=>[...prev.slice(-29),{llm:data.llm_ms,ttfa:null}]);}
-  }catch(e){setError(e.message);}finally{setBusy(false);busyRef.current=false;if(autoRef.current&&!speakingRef.current)startListening();}
+  }catch(e){const msg=e instanceof TypeError?'Cannot reach the local backend at http://127.0.0.1:8000. Restart FastAPI and check /api/health.':e.message;setError(msg);autoRef.current=false;setAutoMode(false);recognition.current?.abort();recognitionActive.current=false;setListening(false);}finally{setBusy(false);busyRef.current=false;if(autoRef.current&&!speakingRef.current)startListening();}
  }
  async function playSpeech(text,turnStartTime){
   const start=performance.now();
