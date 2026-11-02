@@ -35,23 +35,56 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=3000)
     history: list[Message] = Field(default_factory=list, max_length=30)
 
+FIELDS = [
+    ("project", "Are you planning a kitchen remodel or a bathroom remodel?"),
+    ("budget", "What approximate budget are you comfortable investing in the project?"),
+    ("scope", "What would you like to change — for example cabinets, countertops, flooring, shower, or the full room?"),
+    ("timeline", "When would you ideally like the remodeling work to begin?"),
+    ("location", "Which city is the property located in?")
+]
+
 def extract_lead(history, message):
-    """Conservative prototype extraction: unknown values remain unknown."""
-    combined = " ".join([m.content for m in history if m.role == "user"] + [message])
+    """Extract the latest explicit answer, including answers to guided questions."""
+    user_turns = [m.content for m in history if m.role == "user"] + [message]
+    combined = " ".join(user_turns)
     lower = combined.lower()
     project = "Kitchen" if "kitchen" in lower else "Bathroom" if "bathroom" in lower else None
-    budget_match = re.search(r"\$\s?[\d,]+(?:\s?[kK])?", combined)
-    timeline_match = re.search(r"(?:next|within|in)\s+\d+\s+(?:weeks?|months?)|as soon as possible|this (?:month|year|summer|winter|fall|spring)", lower)
-    scope_terms = ["cabinets", "countertops", "flooring", "tile", "shower", "bathtub", "sink", "appliances", "plumbing", "painting", "layout", "full remodel", "complete renovation"]
+    budget_match = re.search(r"\\$\\s?[\\d,]+(?:\\s?[kK])?|\\b\\d{2,3}\\s?k\\b", combined, re.I)
+    timeline_match = re.search(r"(?:next|within|in)\\s+\\d+\\s+(?:days?|weeks?|months?)|as soon as possible|\\basap\\b|this (?:month|year|summer|winter|fall|spring)|next (?:month|year|summer|winter|fall|spring)|\\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\\b", lower)
+    scope_terms = ["cabinets","countertops","flooring","tile","shower","bathtub","sink","appliances","plumbing","painting","layout","full remodel","complete renovation","everything","full kitchen","full bathroom"]
     scope = ", ".join(term for term in scope_terms if term in lower) or None
-    location_match = re.search(r"(?:located in|property is in|house is in|home is in|i live in|i'm in|i am in)\s+([A-Za-z][A-Za-z .-]{1,40})(?=[,.!?]|$)", combined, re.I)
+    location_match = re.search(r"(?:located in|property is in|house is in|home is in|i live in|i'm in|i am in)\\s+([A-Za-z][A-Za-z .-]{1,40})(?=[,.!?]|$)", combined, re.I)
     location = location_match.group(1).strip() if location_match else None
-    lead = {"project": project, "budget": budget_match.group(0) if budget_match else None,
-            "scope": scope, "timeline": timeline_match.group(0) if timeline_match else None,
-            "location": location}
-    lead["completed"] = sum(bool(value) for value in lead.values())
-    lead["next_field"] = next((key for key, value in lead.items() if key not in ("completed", "next_field") and not value), None)
+    lead = {"project":project,"budget":budget_match.group(0) if budget_match else None,"scope":scope,"timeline":timeline_match.group(0) if timeline_match else None,"location":location}
+    # Associate a short reply with the field explicitly asked in the preceding AI turn.
+    # Do not infer location from an arbitrary utterance.
+    for i, turn in enumerate(history):
+        if turn.role != "assistant" or i + 1 >= len(history) or history[i+1].role != "user":
+            continue
+        answer = history[i+1].content.strip()
+        for key, question in FIELDS:
+            if question.lower() in turn.content.lower() and answer:
+                if key == "location" and not lead["location"]:
+                    candidate = re.sub(r"^(?:i live in|i'm in|in|it's in|the property is in)\\s+", "", answer, flags=re.I).strip(" .,!") 
+                    if re.fullmatch(r"[A-Za-z][A-Za-z .-]{1,45}", candidate):
+                        lead["location"] = candidate
+                elif key == "scope" and not lead["scope"] and len(answer) < 180:
+                    lead["scope"] = answer
+                elif key == "timeline" and not lead["timeline"] and len(answer) < 100:
+                    lead["timeline"] = answer
+                elif key == "budget" and not lead["budget"] and re.search(r"\\d", answer):
+                    lead["budget"] = answer
+    lead["completed"] = sum(bool(lead[key]) for key,_ in FIELDS)
+    lead["next_field"] = next((key for key,_ in FIELDS if not lead[key]), None)
     return lead
+
+def recommendation(lead):
+    scope = lead["scope"]
+    return (f"Based on your {lead['project'].lower()} project in {lead['location']}, "
+            f"with a budget of {lead['budget']} and a target start of {lead['timeline']}, "
+            f"I recommend starting with a design consultation to review {scope}, "
+            "prioritize the highest-impact improvements, and validate the budget and timeline with a local professional. "
+            "Would you like to request a consultation? This demo cannot confirm an appointment.")
 
 @app.get("/api/health")
 def health():
@@ -62,9 +95,13 @@ def chat(body: ChatRequest):
     start = time.perf_counter()
     turns = body.history[-12:]
     lead = extract_lead(turns, body.message)
+    # A complete qualification produces a concrete recommendation instead of another question.
+    if lead["completed"] == 5:
+        return {"reply":recommendation(lead), "llm_ms":round((time.perf_counter()-start)*1000), "lead":lead, "recommended":True}
+    next_question = next(question for key,question in FIELDS if key == lead["next_field"])
     conversation = "\n".join(f"{'Homeowner' if m.role == 'user' else 'Shekhar AI'}: {m.content}" for m in turns)
     prompt = f"{conversation}\nHomeowner: {body.message}\nShekhar AI:"
-    data = json.dumps({"model":"gemma3:4b","system":SYSTEM,"prompt":prompt,
+    data = json.dumps({"model":"gemma3:4b","system":SYSTEM + "\\nThe next qualification question is: " + next_question + " Answer any direct homeowner question briefly, then ask this exact next question. Do not ask other qualification questions.","prompt":prompt,
                        "stream":False,"options":{"num_predict":120,"temperature":0.5}}).encode()
     try:
         req = urllib.request.Request("http://localhost:11434/api/generate", data=data,
@@ -73,7 +110,7 @@ def chat(body: ChatRequest):
             answer = json.load(response)["response"].strip()
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Local Ollama unavailable: {exc}")
-    return {"reply":answer, "llm_ms":round((time.perf_counter()-start)*1000),
+    if next_question.lower() not in answer.lower():\n        answer = answer.rstrip() + " " + next_question\n    return {"reply":answer, "llm_ms":round((time.perf_counter()-start)*1000),
             "lead":lead}
 
 class SpeechRequest(BaseModel):
