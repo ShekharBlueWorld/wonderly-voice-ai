@@ -37,3 +37,16 @@
 .autobutton{padding:17px 28px;font-size:16px;border-radius:16px}
 @media(max-width:1200px){.shell{grid-template-columns:215px minmax(400px,1fr)}.insights{grid-column:2}}
 @media(max-width:750px){.shell{display:block}.sidebar nav{display:flex;gap:8px}.sidebar nav button{width:auto}.performancepage{padding:22px;min-height:60vh}.performancepage>.metricgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Local design concept gallery */
+.inspiration h3{margin-bottom:4px}
+.inspirehint{font-size:12px;color:#687a94;margin:0 0 13px}
+.inspirecards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.inspirecard{min-width:0;border:1px solid #e5ebf5;border-radius:13px;overflow:hidden;padding-bottom:9px;background:#f9fbff}
+.inspirecard img{display:block;width:100%;aspect-ratio:1.4;object-fit:cover;background:#eaf0f5}
+.inspirecard b,.inspirecard small{display:block;margin:8px 8px 0;font-size:11px;line-height:1.3}
+.inspirecard small{font-size:10px;color:#708099;margin-top:3px}
+.designbudget{margin-top:14px;background:#f0f5ff;border-radius:12px;padding:12px}
+.designbudget b{font-size:12px;color:#1d4f98}
+.designbudget p{font-size:12px;line-height:1.45;margin:7px 0;color:#364d6e}
+.designbudget small{font-size:10px;line-height:1.4;color:#74859d}
