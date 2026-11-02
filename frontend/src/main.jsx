@@ -17,21 +17,21 @@ function App(){
  const [mouth,setMouth]=useState(0),animationRef=useRef(null),audioContextRef=useRef(null);
  const messagesRef=useRef(messages);messagesRef.current=messages;
  const mutedRef=useRef(muted);mutedRef.current=muted;
- const recognitionActive=useRef(false);
+ const recognitionActive=useRef(false),recognitionStarting=useRef(false),recognitionToken=useRef(0);
  function startListening(){
-  if(!autoRef.current||busyRef.current||speakingRef.current||recognitionActive.current)return;
+  if(!autoRef.current||busyRef.current||speakingRef.current||recognitionActive.current||recognitionStarting.current)return;
   const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SpeechRecognition){setError('Chrome speech recognition is required for this prototype.');autoRef.current=false;setAutoMode(false);return;}
-  const rec=new SpeechRecognition();recognition.current=rec;rec.lang='en-US';rec.interimResults=true;rec.continuous=false;
-  rec.onstart=()=>{recognitionActive.current=true;setListening(true);turnStart.current=performance.now()};
-  rec.onresult=e=>{let finalText='';for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)finalText+=e.results[i][0].transcript;
-    if(finalText.trim()){setStt(Math.round(performance.now()-turnStart.current));rec.onend=null;rec.stop();recognitionActive.current=false;setListening(false);send(finalText.trim());}};
-  rec.onerror=e=>{if(e.error!=='aborted'&&e.error!=='no-speech'){setError('Microphone: '+e.error);autoRef.current=false;setAutoMode(false)}};
-  rec.onend=()=>{recognitionActive.current=false;setListening(false);if(autoRef.current&&!busyRef.current&&!speakingRef.current)startListening()};
-  try{rec.start()}catch(e){recognitionActive.current=false;setError(e.message)}
+  const rec=new SpeechRecognition();recognition.current=rec;const token=++recognitionToken.current;recognitionStarting.current=true;rec.lang='en-US';rec.interimResults=true;rec.continuous=false;rec.maxAlternatives=3;
+  rec.onstart=()=>{if(token!==recognitionToken.current){rec.abort();return;}recognitionStarting.current=false;recognitionActive.current=true;setListening(true);turnStart.current=performance.now()};
+  rec.onresult=e=>{if(token!==recognitionToken.current)return;let finalText='';for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)finalText+=e.results[i][0].transcript;
+    if(finalText.trim()){setStt(Math.round(performance.now()-turnStart.current));rec.onend=null;recognitionToken.current++;recognitionStarting.current=false;rec.stop();recognitionActive.current=false;setListening(false);send(finalText.trim());}};
+  rec.onerror=e=>{if(token!==recognitionToken.current)return;if(e.error!=='aborted'&&e.error!=='no-speech'){setError('Microphone: '+e.error);autoRef.current=false;setAutoMode(false)}};
+  rec.onend=()=>{if(token!==recognitionToken.current)return;recognitionStarting.current=false;recognitionActive.current=false;setListening(false);if(autoRef.current&&!busyRef.current&&!speakingRef.current)setTimeout(startListening,150)};
+  try{rec.start()}catch(e){recognitionStarting.current=false;recognitionActive.current=false;setError(e.message)}
  }
  function toggleAuto(){
-  if(autoRef.current){autoRef.current=false;setAutoMode(false);recognition.current?.abort();recognitionActive.current=false;setListening(false);audio.current?.pause();speakingRef.current=false;setSpeaking(false);cancelAnimationFrame(animationRef.current);setMouth(0);}
+  if(autoRef.current){autoRef.current=false;setAutoMode(false);recognitionToken.current++;recognitionStarting.current=false;recognition.current?.abort();recognitionActive.current=false;setListening(false);audio.current?.pause();speakingRef.current=false;setSpeaking(false);cancelAnimationFrame(animationRef.current);setMouth(0);}
   else{autoRef.current=true;setAutoMode(true);if(messagesRef.current.length===1){speakingRef.current=true;playSpeech(welcome,performance.now()).catch(e=>{speakingRef.current=false;setError('Voice introduction failed: '+e.message);startListening();});}else startListening();}
  }
 
@@ -39,7 +39,7 @@ function App(){
  useEffect(()=>{bottom.current?.scrollIntoView({behavior:'smooth'});},[messages]);
  async function send(text=input){
   text=text.trim();if(!text||busyRef.current)return;
-  busyRef.current=true;recognition.current?.abort();recognitionActive.current=false;setListening(false);
+  busyRef.current=true;recognitionToken.current++;recognitionStarting.current=false;recognition.current?.abort();recognitionActive.current=false;setListening(false);
   setError('');setInput('');setBusy(true);setTts(null);setTtsEngine(null);setTtfa(null);
   const start=performance.now();
   const history=messagesRef.current.map(m=>({role:m.role,content:m.content}));
@@ -49,7 +49,7 @@ function App(){
    const data=await response.json();if(!response.ok)throw Error(data.detail||'Chat failed');
    setMessages(prev=>[...prev,{role:'assistant',content:data.reply}]);setLlm(data.llm_ms);setLead(data.lead);if(data.contact)setContact(data.contact);if(data.stage)setStage(data.stage);
    if(!mutedRef.current){await playSpeech(data.reply,start);}else{setSamples(prev=>[...prev.slice(-29),{llm:data.llm_ms,ttfa:null}]);}
-  }catch(e){const msg=e instanceof TypeError?'Cannot reach the local backend at http://127.0.0.1:8000. Restart FastAPI and check /api/health.':e.message;setError(msg);autoRef.current=false;setAutoMode(false);recognition.current?.abort();recognitionActive.current=false;setListening(false);}finally{setBusy(false);busyRef.current=false;if(autoRef.current&&!speakingRef.current)startListening();}
+  }catch(e){const msg=e instanceof TypeError?'Cannot reach the local backend at http://127.0.0.1:8000. Restart FastAPI and check /api/health.':e.message;setError(msg);autoRef.current=false;setAutoMode(false);recognitionToken.current++;recognitionStarting.current=false;recognition.current?.abort();recognitionActive.current=false;setListening(false);}finally{setBusy(false);busyRef.current=false;if(autoRef.current&&!speakingRef.current)startListening();}
  }
  // Split long replies on sentence boundaries; synthesize ahead while the first plays.
  function speechChunks(text){
