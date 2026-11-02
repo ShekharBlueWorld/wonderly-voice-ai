@@ -262,7 +262,7 @@ def synthesize_audio(text):
     voice = get_voice()
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as wav_file:
-        voice.synthesize(text, wav_file)
+        voice.synthesize_wav(text, wav_file)
     return buffer.getvalue()
 
 @app.on_event("startup")
