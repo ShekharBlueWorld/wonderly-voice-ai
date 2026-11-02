@@ -46,14 +46,15 @@ FIELDS = [
 
 def parse_budget(value):
     s = value.lower().replace("-", " ").strip()
-    digits = re.search(r"(?<!\\d)(?:\\$\\s*)?(\\d{1,3}(?:,\\d{3})+|\\d{4,7}|\\d{2,3}\\s*k)(?!\\d)", s)
+    # Speech recognition may return "$50,000", "50 000", "50000", or "fifty thousand".
+    digits = re.search(r"(?<!\d)(?:\$\s*)?(\d{1,3}(?:[ ,]\d{3})+|\d{4,7}|\d{1,3}\s*k)(?!\d)", s)
     if digits:
-        raw = digits.group(1).replace(",", "").replace(" ", "")
+        raw = re.sub(r"[ ,]", "", digits.group(1))
         amount = int(raw[:-1])*1000 if raw.endswith("k") else int(raw)
         return f"${amount:,}" if amount >= 1000 else None
     tens = {"ten":10,"twenty":20,"thirty":30,"forty":40,"fifty":50,"sixty":60,"seventy":70,"eighty":80,"ninety":90}
     ones = {"one":1,"two":2,"three":3,"four":4,"five":5,"six":6,"seven":7,"eight":8,"nine":9}
-    match = re.search(r"\\b(" + "|".join(tens) + r")(?:\\s+(" + "|".join(ones) + r"))?\\s+thousand\\b",s)
+    match = re.search(r"\b(" + "|".join(tens) + r")(?:\s+(" + "|".join(ones) + r"))?\s+thousand\b",s)
     if match:
         return f"${(tens[match.group(1)]+ones.get(match.group(2),0))*1000:,}"
     return None
@@ -122,16 +123,24 @@ def chat(body: ChatRequest):
     next_field = lead["next_field"]
     question = dict(FIELDS)[next_field]
     # Evaluate only the acknowledgement for the actual next field.
+    # If an answer cannot be parsed, ask for clarification instead of repeating
+    # the previous acknowledgement or silently accepting an incomplete amount.
+    if body.history and body.history[-1].role == "assistant":
+        last_question = next((key for key, q in FIELDS if q.lower() in body.history[-1].content.lower()), None)
+        if last_question and last_question == next_field:
+            example = " For example, fifty thousand dollars." if next_field == "budget" else ""
+            return {"reply":f"Sorry, I didn't catch that clearly. Could you please repeat it?{example}",
+                    "llm_ms":round((time.perf_counter()-start)*1000),"lead":lead}
     if next_field == "project":
         prefix = f"Nice to meet you, {lead['name']}!"
     elif next_field == "budget":
-        prefix = f"Great, {lead['name']} — a {lead['project'].lower()} remodel!"
+        prefix = "Sounds good!"
     elif next_field == "scope":
-        prefix = f"Thanks, I've noted your budget of {lead['budget']}."
+        prefix = f"Thanks, I've noted a budget of {lead['budget']}."
     elif next_field == "timeline":
-        prefix = "Got it, I've noted your remodeling priorities."
+        prefix = "Got it."
     elif next_field == "location":
-        prefix = "Thanks, I've noted your preferred start date."
+        prefix = "That helps, thanks."
     else:
         prefix = "I'd be happy to help."
 
