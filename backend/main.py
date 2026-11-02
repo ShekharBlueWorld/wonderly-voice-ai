@@ -67,7 +67,7 @@ def answer_field(key, value):
     if not s:
         return None
     if key == "name":
-        candidate = re.sub(r"^(?:my name is|i am|i'm|it's|this is|call me)\\s+", "", s, flags=re.I).strip()
+        candidate = re.sub(r"^(?:my name is|i am|i'm|it's|this is|call me|my name's|name is)\s+", "", s, flags=re.I).strip()
         return candidate.title() if re.fullmatch(r"[A-Za-z][A-Za-z '-]{0,40}",candidate) and len(candidate.split()) <= 4 else None
     if key == "project":
         return "Kitchen" if "kitchen" in low else "Bathroom" if "bathroom" in low else None
@@ -80,11 +80,11 @@ def answer_field(key, value):
     if key == "size":
         if low in ("not sure", "unsure", "dont know", "don\'t know", "unknown", "skip", "no idea"):
             return "Not sure"
-        return s[:70] if re.search(r"\\d|feet|foot|square|sq\\.?\\s*ft",low) else None
+        return s[:70] if re.search(r"\d|feet|foot|square|sq\.?\s*ft",low) else None
     if key == "priority":
         return s[:100] if len(s) > 2 else None
     if key == "location":
-        candidate = re.sub(r"^(?:i live in|i'm in|in|it's in|the property is in)\\s+", "", s, flags=re.I)
+        candidate = re.sub(r"^(?:i live in|i'm in|in|it's in|the property is in)\s+", "", s, flags=re.I)
         return candidate.title() if re.fullmatch(r"[A-Za-z][A-Za-z .'-]{1,50}",candidate) else None
 
 def extract_lead(history, message):
