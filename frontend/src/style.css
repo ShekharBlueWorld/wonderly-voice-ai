@@ -71,3 +71,21 @@
 .recommendhero img{width:100%;display:block;aspect-ratio:1.4;object-fit:cover}
 .recommendhero span{position:absolute;bottom:9px;left:9px;background:#102744d9;color:#fff;padding:6px 9px;border-radius:8px;font-size:10px}
 .inspiration h4{font-size:16px;margin:12px 0 6px;color:#1b3357}
+
+/* Personal design recommendation */
+.recheader h3{font-size:21px;line-height:1.2;margin:9px 0 6px;color:#173258}
+.recheader p{font-size:12px;color:#6c7f99;margin:0 0 13px}
+.rectag{font-size:10px;letter-spacing:1.1px;color:#3767c6;font-weight:800}
+.recfacts{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:13px 0 18px}
+.recfacts>div{background:#f1f5fc;padding:12px;border-radius:12px;min-width:0}
+.recfacts small,.recfacts b{display:block}
+.recfacts small{font-size:9px;color:#7487a3;letter-spacing:.5px}
+.recfacts b{font-size:16px;color:#173258;margin-top:6px;overflow-wrap:anywhere}
+.recsteps{display:flex;flex-direction:column;gap:9px}
+.recstep{display:flex;gap:11px;align-items:flex-start;padding:11px;border:1px solid #e7ecf5;border-radius:12px}
+.recstep>span{font-size:12px;font-weight:800;color:#3767c6;background:#e8efff;padding:8px;border-radius:8px}
+.recstep b,.recstep small{display:block}
+.recstep b{font-size:12px;color:#233c60}
+.recstep small{font-size:11px;line-height:1.45;color:#7586a0;margin-top:4px}
+.recdisclaimer{margin-top:14px;font-size:10px;line-height:1.5;color:#8492a6}
+.recending{font-size:12px;color:#256d54;background:#e8f8f0;padding:11px;border-radius:10px}
