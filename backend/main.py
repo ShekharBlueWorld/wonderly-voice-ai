@@ -126,22 +126,46 @@ def recommendation(lead):
             "These are preliminary ideas, not a price quote. "
             "Would you like me to prepare a design consultation request?")
 
+def contact_from_text(message):
+    raw = message.strip()
+    email = re.search(r"[A-Za-z0-9._%+-]+\s*@\s*[A-Za-z0-9.-]+\s*\.\s*[A-Za-z]{2,}", raw)
+    if email:
+        return "email", re.sub(r"\s+", "", email.group(0)).lower()
+    # Speech transcription may say "at" and "dot".
+    spoken = re.sub(r"\s+at\s+", "@", raw, flags=re.I)
+    spoken = re.sub(r"\s+dot\s+", ".", spoken, flags=re.I)
+    spoken = re.sub(r"\s+", "", spoken)
+    email = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", spoken)
+    if email:
+        return "email", email.group(0).lower()
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) == 10 or (len(digits) == 11 and digits.startswith("1")):
+        return "phone", digits
+    return None, None
+
 def consultation_reply(history, message, lead):
     if not history:
-        return None
+        return None, None
     previous = history[-1].content.lower() if history[-1].role == "assistant" else ""
     lower = message.strip().lower()
     if "consultation request" in previous and re.fullmatch(r"(yes|yes please|sure|okay|ok|absolutely|please do|sounds good)[.! ]*",lower):
-        return ("Excellent! I'll prepare a consultation request using the details you've shared. "
-                "What's the best email address to reach you?")
-    if "email address" in previous:
-        match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}",message)
-        if match:
-            return (f"Thank you! I've prepared a consultation request for {lead['project'].lower()} remodeling "
-                    f"in {lead['location']} with your {lead['budget']} budget. "
-                    "This is a demo lead summary; no request has been sent to a contractor.")
-        return "Sorry, I didn't catch a valid email address. Could you please repeat it?"
-    return None
+        return ("Excellent! What's the best email address or phone number to reach you?", None)
+    # A valid contact is accepted even if the previous question was a clarification.
+    waiting_for_contact = any(
+        m.role == "assistant" and ("email address or phone number" in m.content.lower()
+          or "valid email or phone" in m.content.lower()
+          or "contact details" in m.content.lower())
+        for m in history[-8:])
+    if waiting_for_contact:
+        kind, contact = contact_from_text(message)
+        if kind:
+            return (f"Thanks! Your {lead['project'].lower()} consultation summary is ready. "
+                    "Use Send Email or Send Text on screen to review and send it. "
+                    "Nothing has been sent automatically.",
+                    {"type":kind,"value":contact})
+        return ("Sorry, I couldn't recognize that contact detail. "
+                "Could you repeat a valid email or phone number, or type it below?", None)
+    return None, None
 
 @app.get("/api/health")
 def health():
@@ -151,9 +175,9 @@ def health():
 def chat(body: ChatRequest):
     start = time.perf_counter()
     lead = extract_lead(body.history[-30:], body.message)
-    followup = consultation_reply(body.history, body.message, lead) if lead["completed"] == len(FIELDS) else None
+    followup, contact = consultation_reply(body.history, body.message, lead) if lead["completed"] == len(FIELDS) else (None, None)
     if followup:
-        return {"reply":followup,"llm_ms":round((time.perf_counter()-start)*1000),"lead":lead,"recommended":True}
+        return {"reply":followup,"llm_ms":round((time.perf_counter()-start)*1000),"lead":lead,"contact":contact,"recommended":True}
     if lead["completed"] == len(FIELDS):
         reply = recommendation(lead)
         return {"reply":reply,"llm_ms":round((time.perf_counter()-start)*1000),"lead":lead,"recommended":True}
