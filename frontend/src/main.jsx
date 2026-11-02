@@ -3,7 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {AudioLines, MessageSquare, Users, CalendarDays, BarChart3, Layers, Mic, MicOff, Send, Volume2, VolumeX, Zap, Clock3, CheckCircle2, Circle, Home, Settings, Square, Sparkles} from 'lucide-react';
 import './style.css';
 const API='http://127.0.0.1:8000';
-const welcome="Hi! I'm Shekhar AI, your virtual remodeling consultant. Are you thinking about renovating your kitchen or bathroom?";
+const welcome="Hi! I'm Shekhar AI, your virtual remodeling consultant. May I have your name?";
 function App(){
  const [messages,setMessages]=useState([{role:'assistant',content:welcome}]);
  const [input,setInput]=useState('');const [busy,setBusy]=useState(false);
@@ -32,7 +32,7 @@ function App(){
  }
  function toggleAuto(){
   if(autoRef.current){autoRef.current=false;setAutoMode(false);recognition.current?.abort();recognitionActive.current=false;setListening(false);audio.current?.pause();speakingRef.current=false;setSpeaking(false);cancelAnimationFrame(animationRef.current);setMouth(0);}
-  else{autoRef.current=true;setAutoMode(true);startListening();}
+  else{autoRef.current=true;setAutoMode(true);if(messagesRef.current.length===1){speakingRef.current=true;playSpeech(welcome,performance.now()).catch(e=>{speakingRef.current=false;setError('Voice introduction failed: '+e.message);startListening();});}else startListening();}
  }
 
  const audio=useRef(null);const recognition=useRef(null);const bottom=useRef(null);
@@ -78,7 +78,7 @@ function App(){
   rec.onend=()=>{setListening(false);setTurnDetect(null);};rec.onerror=e=>{setError('Microphone: '+e.error);setListening(false)};
   try{turnStart.current=performance.now();rec.start();setListening(true);}catch(e){setError(e.message);}
  }
- const checks=[['Kitchen or bathroom?',lead.project],['What is your budget?',lead.budget],['What needs remodeling?',lead.scope],['When do you want to start?',lead.timeline],['Where is the property?',lead.location]];
+ const checks=[['Your name?',lead.name],['Kitchen or bathroom?',lead.project],['What is your budget?',lead.budget],['What needs remodeling?',lead.scope],['When do you want to start?',lead.timeline],['Where is the property?',lead.location]];
  const next=checks.find(x=>!x[1]);
  const p95=values=>{const v=values.filter(x=>x!=null).sort((a,b)=>a-b);return v.length?v[Math.ceil(v.length*.95)-1]:null};
  const progress=Math.round(checks.filter(x=>x[1]).length/checks.length*100);
@@ -86,7 +86,7 @@ function App(){
  return <div className="shell">
  <aside className="sidebar"><div className="brand"><div className="brandmark"><Home size={28}/></div><div><b>Wonderly</b><small>Voice AI</small></div></div>
  <nav>{[[MessageSquare,'Conversation'],[BarChart3,'Performance']].map(([Icon,label])=><button type="button" className={'navitem '+(view===label?'active':'')} key={label} onClick={()=>setView(label)}><Icon size={20}/>{label}</button>)}</nav>
- <section className="sidequal"><h3>Lead Qualification</h3><div className="sideprogress"><span style={{width:progress+'%'}}/></div><small>{checks.filter(x=>x[1]).length} of 5 completed</small><div className="sidechecks">{checks.map(([label,value])=><div key={label}><CheckCircle2 size={19} color={value?'#4ade80':'#647b9f'}/><div><b>{label}</b><small>{value||'Awaiting answer'}</small></div></div>)}</div><div className="sidenext">{next?'Next question: '+next[0]:'All five answered — recommendation ready'}</div></section>
+ <section className="sidequal"><h3>Lead Qualification</h3><div className="sideprogress"><span style={{width:progress+'%'}}/></div><small>{checks.filter(x=>x[1]).length} of 6 completed</small><div className="sidechecks">{checks.map(([label,value])=><div key={label}><CheckCircle2 size={19} color={value?'#4ade80':'#647b9f'}/><div><b>{label}</b><small>{value||'Awaiting answer'}</small></div></div>)}</div><div className="sidenext">{next?'Next question: '+next[0]:'All six answered — recommendation ready'}</div></section>
  <div className="sidebarfoot"><div className="kitchen">✦ Dream kitchens start here</div><p>AI-powered home remodeling sales assistant</p><small>Demo built by Shekhar Venkat</small></div></aside>
  {view==="Conversation"&&<main className="center"><section className="hero"><div className={"heroavatar "+(speaking?"avatar-talking":"")} style={{"--mouth":mouth}}><img src="/shekhar-avatar.jpg" onError={e=>{e.currentTarget.style.display='none'}} alt="Shekhar avatar"/><div className={'mini-wave '+(speaking?'live':'')}>{Array.from({length:15},(_,i)=><i key={i}/>)}</div></div><div className="herotext"><div className="eyebrow"><Sparkles size={14}/> AI SALES CONSULTANT</div><h1>Hi, I'm <span>Shekhar</span> 👋</h1><h2>Your AI remodeling consultant</h2><p>Let's plan your kitchen or bathroom renovation, explore options, and request a consultation.</p><div className="chips">{['Kitchen remodel','Bathroom remodel','Discuss budget','Schedule consultation'].map(x=><button key={x} onClick={()=>setInput(x)}>{x}</button>)}</div></div></section>
  <section className="conversation"><div className="conversationhead"><div><b>Live Conversation</b><small>Talk naturally with Shekhar AI</small></div><span className="online"><span className="dot"/> {status}</span></div>
