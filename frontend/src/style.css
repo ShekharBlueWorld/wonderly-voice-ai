@@ -66,3 +66,8 @@
 .contactactions button{flex:1;padding:11px 5px;border:0;border-radius:10px;background:#1d5ed5;color:white;font-weight:700;cursor:pointer}
 .contactactions button+button{background:#e8effc;color:#24539e}
 .hero{min-height:unset}
+
+.recommendhero{position:relative;border-radius:14px;overflow:hidden;background:#e9f0f5;margin:12px 0}
+.recommendhero img{width:100%;display:block;aspect-ratio:1.4;object-fit:cover}
+.recommendhero span{position:absolute;bottom:9px;left:9px;background:#102744d9;color:#fff;padding:6px 9px;border-radius:8px;font-size:10px}
+.inspiration h4{font-size:16px;margin:12px 0 6px;color:#1b3357}
