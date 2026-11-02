@@ -121,13 +121,20 @@ def chat(body: ChatRequest):
         return {"reply":reply,"llm_ms":round((time.perf_counter()-start)*1000),"lead":lead,"recommended":True}
     next_field = lead["next_field"]
     question = dict(FIELDS)[next_field]
-    prefix = {
-        "project":f"Nice to meet you, {lead['name']}!",
-        "budget":f"Great, {lead['name']} — a {lead['project'].lower()} remodel!",
-        "scope":f"Thanks, I've noted your budget of {lead['budget']}.",
-        "timeline":"Got it, I've noted your remodeling priorities.",
-        "location":"Thanks, I've noted your preferred start date."
-    }.get(next_field,"I'd be happy to help.")
+    # Evaluate only the acknowledgement for the actual next field.
+    if next_field == "project":
+        prefix = f"Nice to meet you, {lead['name']}!"
+    elif next_field == "budget":
+        prefix = f"Great, {lead['name']} — a {lead['project'].lower()} remodel!"
+    elif next_field == "scope":
+        prefix = f"Thanks, I've noted your budget of {lead['budget']}."
+    elif next_field == "timeline":
+        prefix = "Got it, I've noted your remodeling priorities."
+    elif next_field == "location":
+        prefix = "Thanks, I've noted your preferred start date."
+    else:
+        prefix = "I'd be happy to help."
+
     return {"reply":prefix+" "+question,"llm_ms":round((time.perf_counter()-start)*1000),"lead":lead}
 
 class SpeechRequest(BaseModel):
