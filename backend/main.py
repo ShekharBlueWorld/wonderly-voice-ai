@@ -74,7 +74,7 @@ def answer_field(key, value):
     if key == "scope":
         return s[:140] if len(s) <= 140 else None
     if key == "timeline":
-        return s[:80] if low in ("today","tomorrow","now","asap","immediately") or re.search(r"\\b(next|this|within|in|week|month|year|spring|summer|fall|winter|january|february|march|april|may|june|july|august|september|october|november|december)\\b|\\d",low) else None
+        return s[:80] if low in ("today","tomorrow","now","asap","immediately") or re.search(r"\b(next|this|within|in|week|month|year|spring|summer|fall|winter|january|february|march|april|may|june|july|august|september|october|november|december)\b|\d",low) else None
     if key == "location":
         candidate = re.sub(r"^(?:i live in|i'm in|in|it's in|the property is in)\\s+", "", s, flags=re.I)
         return candidate.title() if re.fullmatch(r"[A-Za-z][A-Za-z .'-]{1,50}",candidate) else None
@@ -88,6 +88,12 @@ def extract_lead(history, message):
             continue
         previous = turns[i-1].content.lower() if i and turns[i-1].role == "assistant" else ""
         asked = next((key for key, question in FIELDS if question.lower() in previous), None)
+        if not asked and "sorry, i didn't catch that clearly" in previous:
+            for earlier in reversed(turns[:i-1]):
+                if earlier.role == "assistant":
+                    asked = next((key for key, question in FIELDS if question.lower() in earlier.content.lower()), None)
+                    if asked:
+                        break
         if not asked and i == 1 and "name" in previous:
             asked = "name"
         if asked:
