@@ -61,13 +61,12 @@ function App(){
   setSpeaking(true);speakingRef.current=true;player.onended=()=>{setSpeaking(false);speakingRef.current=false;setMouth(0);cancelAnimationFrame(animationRef.current);URL.revokeObjectURL(url);if(autoRef.current&&!busyRef.current)startListening()};
   player.onerror=()=>{setSpeaking(false);speakingRef.current=false;setMouth(0);cancelAnimationFrame(animationRef.current);URL.revokeObjectURL(url);if(autoRef.current&&!busyRef.current)startListening()};
   try{
-   if(!audioContextRef.current)audioContextRef.current=new (window.AudioContext||window.webkitAudioContext)();
-   const context=audioContextRef.current,source=context.createMediaElementSource(player),analyser=context.createAnalyser();
-   analyser.fftSize=512;source.connect(analyser);analyser.connect(context.destination);await context.resume();
-   const levels=new Uint8Array(analyser.frequencyBinCount);
-   const animate=()=>{analyser.getByteFrequencyData(levels);let sum=0;for(let i=2;i<90;i++)sum+=levels[i];
-     setMouth(Math.max(0,Math.min(1,(sum/88-12)/70)));animationRef.current=requestAnimationFrame(animate)};
-   animate();await player.play();const first= Math.round(performance.now()-turnStartTime);setTtfa(first);setSamples(prev=>[...prev.slice(-29),{llm:Math.round(start-turnStartTime),ttfa:first}]);}catch(e){setSpeaking(false);speakingRef.current=false;setMouth(0);cancelAnimationFrame(animationRef.current);URL.revokeObjectURL(url);throw e;}
+   player.volume=1;
+   await player.play();
+   const first=Math.round(performance.now()-turnStartTime);
+   setTtfa(first);
+   setSamples(prev=>[...prev.slice(-29),{llm:Math.round(start-turnStartTime),ttfa:first}]);
+   }catch(e){setSpeaking(false);speakingRef.current=false;setMouth(0);cancelAnimationFrame(animationRef.current);URL.revokeObjectURL(url);throw e;}
  }
  function toggleMic(){
   if(listening){recognition.current?.stop();setListening(false);return;}
