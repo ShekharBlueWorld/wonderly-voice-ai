@@ -50,3 +50,19 @@
 .designbudget b{font-size:12px;color:#1d4f98}
 .designbudget p{font-size:12px;line-height:1.45;margin:7px 0;color:#364d6e}
 .designbudget small{font-size:10px;line-height:1.4;color:#74859d}
+
+/* Compact consultant profile and user-confirmed consultation actions */
+.consultantrow{display:flex;align-items:center;gap:13px}
+.consultantavatar{width:76px;height:76px;border-radius:17px;overflow:hidden;flex-shrink:0;border:3px solid #d9e7ff;background:#edf4ff}
+.consultantavatar.talking{border-color:#39c68e;box-shadow:0 0 0 4px #39c68e24}
+.consultantavatar img{width:100%;height:100%;object-fit:cover}
+.consultantrow b,.consultantrow small{display:block}
+.consultantrow b{font-size:16px;color:#172c50}
+.consultantrow small{font-size:11px;color:#6e819c;margin:5px 0}
+.consultantstatus{font-size:11px;color:#147e55;font-weight:700}
+.contactpanel p{font-size:12px;line-height:1.5;color:#344967}
+.contactpanel small{display:block;font-size:10px;color:#7d8ca2;line-height:1.4}
+.contactactions{display:flex;gap:8px;margin:14px 0}
+.contactactions button{flex:1;padding:11px 5px;border:0;border-radius:10px;background:#1d5ed5;color:white;font-weight:700;cursor:pointer}
+.contactactions button+button{background:#e8effc;color:#24539e}
+.hero{min-height:unset}
