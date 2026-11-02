@@ -41,7 +41,9 @@ FIELDS = [
     ("budget", "What approximate budget are you comfortable investing in the project?"),
     ("scope", "What would you like to change — for example cabinets, countertops, flooring, shower, or the full room?"),
     ("timeline", "When would you ideally like the remodeling work to begin?"),
-    ("location", "Which city is the property located in?")
+    ("location", "Which city is the property located in?"),
+    ("size", "About how big is the room? An estimate in feet or square feet is fine, or say not sure."),
+    ("priority", "What matters most to you: modern style, more storage, better functionality, or something else?")
 ]
 
 def parse_budget(value):
@@ -75,6 +77,12 @@ def answer_field(key, value):
         return s[:140] if len(s) <= 140 else None
     if key == "timeline":
         return s[:80] if low in ("today","tomorrow","now","asap","immediately") or re.search(r"\b(next|this|within|in|week|month|year|spring|summer|fall|winter|january|february|march|april|may|june|july|august|september|october|november|december)\b|\d",low) else None
+    if key == "size":
+        if low in ("not sure", "unsure", "dont know", "don\'t know", "unknown", "skip", "no idea"):
+            return "Not sure"
+        return s[:70] if re.search(r"\\d|feet|foot|square|sq\\.?\\s*ft",low) else None
+    if key == "priority":
+        return s[:100] if len(s) > 2 else None
     if key == "location":
         candidate = re.sub(r"^(?:i live in|i'm in|in|it's in|the property is in)\\s+", "", s, flags=re.I)
         return candidate.title() if re.fullmatch(r"[A-Za-z][A-Za-z .'-]{1,50}",candidate) else None
@@ -211,6 +219,10 @@ def chat(body: ChatRequest):
         prefix = "Got it."
     elif next_field == "location":
         prefix = "That helps, thanks."
+    elif next_field == "size":
+        prefix = "Great, just two quick details left."
+    elif next_field == "priority":
+        prefix = "Perfect, one last question."
     else:
         prefix = "I'd be happy to help."
 
