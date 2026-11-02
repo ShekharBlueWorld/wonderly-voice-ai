@@ -113,17 +113,18 @@ def recommendation(lead):
     project = lead["project"].lower()
     scope = lead["scope"].lower()
     if project == "kitchen":
-        suggestion = ("For cabinetry, consider refinishing or refacing existing cabinets, "
-                      "updating hardware, and evaluating selective countertop or lighting upgrades."
+        suggestion = ("Start with cabinet refinishing or refacing, updated hardware, and targeted lighting. "
+                      "Compare countertop options only after confirming measurements and labor costs."
                       if "cabinet" in scope else
-                      "Consider prioritizing the highest-impact cosmetic upgrades, such as cabinet finishes, lighting, and surfaces, before major layout changes.")
+                      "Start with cabinet finishes, lighting, and the most visible surfaces. "
+                      "Avoid moving walls or plumbing until a contractor confirms the budget.")
     else:
-        suggestion = ("Consider prioritizing flooring, fixtures, and surface finishes, "
-                      "while checking whether plumbing or waterproofing needs attention.")
-    return (f"Thanks, {lead['name']}! For your {project} project in {lead['location']}, "
-            f"with a budget of {lead['budget']} and a target start of {lead['timeline']}, "
-            f"here's my suggestion: {suggestion} "
-            "These are preliminary ideas, not a price quote. "
+        suggestion = ("Focus on fixtures, flooring, vanity finishes, and lighting. "
+                      "Have a professional check waterproofing and plumbing before finalizing the scope.")
+    return (f"Thanks, {lead['name']}! For your {project} remodel in {lead['location']}, "
+            f"with a {lead['budget']} budget and a {lead['timeline']} start, "
+            f"I suggest this direction: {suggestion} "
+            "I've also displayed a design concept on the right. These are ideas, not a price quote. "
             "Would you like me to prepare a design consultation request?")
 
 def contact_from_text(message):
@@ -145,27 +146,35 @@ def contact_from_text(message):
 
 def consultation_reply(history, message, lead):
     if not history:
-        return None, None
+        return None, None, None
     previous = history[-1].content.lower() if history[-1].role == "assistant" else ""
-    lower = message.strip().lower()
-    if "consultation request" in previous and re.fullmatch(r"(yes|yes please|sure|okay|ok|absolutely|please do|sounds good)[.! ]*",lower):
-        return ("Excellent! What's the best email address or phone number to reach you?", None)
-    # A valid contact is accepted even if the previous question was a clarification.
+    lower = message.strip().lower().rstrip(".!? ")
+    recent = [m.content.lower() for m in history[-16:] if m.role == "assistant"]
+    already_finished = any("consultation summary is ready" in m or "thanks for chatting" in m for m in recent)
+    if already_finished:
+        return ("Thank you for chatting with Shekhar AI. Have a wonderful day!", None, "closed")
+    if "consultation request?" in previous or "design consultation request?" in previous:
+        if lower in ("no", "no thanks", "no thank you", "not now", "maybe later", "nope"):
+            return (f"No problem, {lead['name']}! I hope these remodeling ideas were useful. "
+                    "Thank you for chatting, and have a wonderful day!", None, "declined")
+        if lower in ("yes", "yes please", "sure", "okay", "ok", "absolutely", "please do", "sounds good", "yep"):
+            return (f"Wonderful, {lead['name']}! What's the best email address or phone number "
+                    "for a remodeling specialist to contact you?", None, "collecting")
     waiting_for_contact = any(
-        m.role == "assistant" and ("email address or phone number" in m.content.lower()
-          or "valid email or phone" in m.content.lower()
-          or "contact details" in m.content.lower())
-        for m in history[-8:])
+        "email address or phone number" in m or "valid email or phone" in m
+        or "couldn't recognize that contact" in m for m in recent
+    )
     if waiting_for_contact:
         kind, contact = contact_from_text(message)
         if kind:
-            return (f"Thanks! Your {lead['project'].lower()} consultation summary is ready. "
-                    "Use Send Email or Send Text on screen to review and send it. "
-                    "Nothing has been sent automatically.",
-                    {"type":kind,"value":contact})
+            return (f"Thank you, {lead['name']}! Your consultation summary is ready. "
+                    "You can review it and use Send Email or Send Text on the right to submit it. "
+                    "Once it's actually sent to a remodeling team, they can follow up with you. "
+                    "Nothing has been sent automatically. It was a pleasure speaking with you!",
+                    {"type":kind,"value":contact}, "ready")
         return ("Sorry, I couldn't recognize that contact detail. "
-                "Could you repeat a valid email or phone number, or type it below?", None)
-    return None, None
+                "Could you repeat a valid email or phone number, or type it below?", None, "collecting")
+    return None, None, None
 
 @app.get("/api/health")
 def health():
@@ -175,9 +184,9 @@ def health():
 def chat(body: ChatRequest):
     start = time.perf_counter()
     lead = extract_lead(body.history[-30:], body.message)
-    followup, contact = consultation_reply(body.history, body.message, lead) if lead["completed"] == len(FIELDS) else (None, None)
+    followup, contact, stage = consultation_reply(body.history, body.message, lead) if lead["completed"] == len(FIELDS) else (None, None, None)
     if followup:
-        return {"reply":followup,"llm_ms":round((time.perf_counter()-start)*1000),"lead":lead,"contact":contact,"recommended":True}
+        return {"reply":followup,"llm_ms":round((time.perf_counter()-start)*1000),"lead":lead,"contact":contact,"stage":stage,"recommended":True}
     if lead["completed"] == len(FIELDS):
         reply = recommendation(lead)
         return {"reply":reply,"llm_ms":round((time.perf_counter()-start)*1000),"lead":lead,"recommended":True}
