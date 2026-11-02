@@ -18,20 +18,53 @@ function App(){
  const messagesRef=useRef(messages);messagesRef.current=messages;
  const mutedRef=useRef(muted);mutedRef.current=muted;
  const recognitionActive=useRef(false);
+ const recognitionStarting=useRef(false);
+ const recognitionRetry=useRef(null);
  function startListening(){
-  if(!autoRef.current||busyRef.current||speakingRef.current||recognitionActive.current)return;
+  if(!autoRef.current||busyRef.current||speakingRef.current||recognitionActive.current||recognitionStarting.current)return;
   const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SpeechRecognition){setError('Chrome speech recognition is required for this prototype.');autoRef.current=false;setAutoMode(false);return;}
-  const rec=new SpeechRecognition();recognition.current=rec;rec.lang='en-US';rec.interimResults=true;rec.continuous=false;
-  rec.onstart=()=>{recognitionActive.current=true;setListening(true);turnStart.current=performance.now()};
-  rec.onresult=e=>{let finalText='';for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)finalText+=e.results[i][0].transcript;
-    if(finalText.trim()){setStt(Math.round(performance.now()-turnStart.current));rec.onend=null;rec.stop();recognitionActive.current=false;setListening(false);send(finalText.trim());}};
-  rec.onerror=e=>{if(e.error!=='aborted'&&e.error!=='no-speech'){setError('Microphone: '+e.error);autoRef.current=false;setAutoMode(false)}};
-  rec.onend=()=>{recognitionActive.current=false;setListening(false);if(autoRef.current&&!busyRef.current&&!speakingRef.current)startListening()};
-  try{rec.start()}catch(e){recognitionActive.current=false;setError(e.message)}
+  clearTimeout(recognitionRetry.current);
+  const rec=new SpeechRecognition();recognition.current=rec;
+  rec.lang='en-US';rec.interimResults=true;rec.continuous=false;
+  recognitionStarting.current=true;
+  rec.onstart=()=>{
+   if(recognition.current!==rec||!autoRef.current){rec.abort();return;}
+   recognitionStarting.current=false;recognitionActive.current=true;setListening(true);
+   turnStart.current=performance.now();
+  };
+  rec.onresult=e=>{
+   let finalText='';
+   for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)finalText+=e.results[i][0].transcript;
+   if(finalText.trim()&&!busyRef.current){
+    setStt(Math.round(performance.now()-(turnStart.current||performance.now())));
+    rec.onend=null;recognition.current=null;recognitionStarting.current=false;
+    recognitionActive.current=false;setListening(false);rec.abort();send(finalText.trim());
+   }
+  };
+  rec.onerror=e=>{
+   if(e.error==='not-allowed'||e.error==='service-not-allowed'||e.error==='audio-capture'){
+    setError('Microphone: '+e.error);autoRef.current=false;setAutoMode(false);
+   }else if(e.error!=='aborted'&&e.error!=='no-speech'&&e.error!=='network'){
+    setError('Microphone: '+e.error);
+   }
+  };
+  rec.onend=()=>{
+   if(recognition.current!==rec)return;
+   recognitionStarting.current=false;recognitionActive.current=false;setListening(false);
+   recognition.current=null;
+   if(autoRef.current&&!busyRef.current&&!speakingRef.current){
+    clearTimeout(recognitionRetry.current);
+    recognitionRetry.current=setTimeout(()=>startListening(),200);
+   }
+  };
+  try{rec.start()}catch(e){
+   recognitionStarting.current=false;recognitionActive.current=false;
+   if(autoRef.current)recognitionRetry.current=setTimeout(()=>startListening(),500);
+  }
  }
  function toggleAuto(){
-  if(autoRef.current){autoRef.current=false;setAutoMode(false);recognition.current?.abort();recognitionActive.current=false;setListening(false);audio.current?.pause();speakingRef.current=false;setSpeaking(false);cancelAnimationFrame(animationRef.current);setMouth(0);}
+  if(autoRef.current){autoRef.current=false;setAutoMode(false);clearTimeout(recognitionRetry.current);recognition.current?.abort();recognitionStarting.current=false;recognitionActive.current=false;setListening(false);audio.current?.pause();speakingRef.current=false;setSpeaking(false);cancelAnimationFrame(animationRef.current);setMouth(0);}
   else{autoRef.current=true;setAutoMode(true);if(messagesRef.current.length===1){speakingRef.current=true;playSpeech(welcome,performance.now()).catch(e=>{speakingRef.current=false;setError('Voice introduction failed: '+e.message);startListening();});}else startListening();}
  }
 
