@@ -14,6 +14,7 @@ function App(){
  const turnStart=useRef(null);
  const [autoMode,setAutoMode]=useState(false);const [view,setView]=useState('Conversation');
  const autoRef=useRef(false),busyRef=useRef(false),speakingRef=useRef(false);
+ const [cacheHits,setCacheHits]=useState(0),[cacheRequests,setCacheRequests]=useState(0),[recognitionSuccess,setRecognitionSuccess]=useState(0),[recognitionRetries,setRecognitionRetries]=useState(0);
  const [mouth,setMouth]=useState(0),animationRef=useRef(null),audioContextRef=useRef(null);
  const messagesRef=useRef(messages);messagesRef.current=messages;
  const mutedRef=useRef(muted);mutedRef.current=muted;
@@ -25,8 +26,8 @@ function App(){
   const rec=new SpeechRecognition();recognition.current=rec;const token=++recognitionToken.current;recognitionStarting.current=true;rec.lang='en-US';rec.interimResults=true;rec.continuous=false;rec.maxAlternatives=3;
   rec.onstart=()=>{if(token!==recognitionToken.current){rec.abort();return;}recognitionStarting.current=false;recognitionActive.current=true;setListening(true);turnStart.current=performance.now()};
   rec.onresult=e=>{if(token!==recognitionToken.current)return;let finalText='';for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)finalText+=e.results[i][0].transcript;
-    if(finalText.trim()){setStt(Math.round(performance.now()-turnStart.current));rec.onend=null;recognitionToken.current++;recognitionStarting.current=false;rec.stop();recognitionActive.current=false;setListening(false);send(finalText.trim());}};
-  rec.onerror=e=>{if(token!==recognitionToken.current)return;if(e.error!=='aborted'&&e.error!=='no-speech'){setError('Microphone: '+e.error);autoRef.current=false;setAutoMode(false)}};
+    if(finalText.trim()){setRecognitionSuccess(n=>n+1);setStt(Math.round(performance.now()-turnStart.current));rec.onend=null;recognitionToken.current++;recognitionStarting.current=false;rec.stop();recognitionActive.current=false;setListening(false);send(finalText.trim());}};
+  rec.onerror=e=>{if(token!==recognitionToken.current)return;if(e.error==='no-speech')setRecognitionRetries(n=>n+1);if(e.error!=='aborted'&&e.error!=='no-speech'){setError('Microphone: '+e.error);autoRef.current=false;setAutoMode(false)}};
   rec.onend=()=>{if(token!==recognitionToken.current)return;recognitionStarting.current=false;recognitionActive.current=false;setListening(false);if(autoRef.current&&!busyRef.current&&!speakingRef.current)setTimeout(startListening,150)};
   try{rec.start()}catch(e){recognitionStarting.current=false;recognitionActive.current=false;setError(e.message)}
  }
@@ -74,7 +75,7 @@ function App(){
   setSpeaking(true);speakingRef.current=true;
   try{
    for(let i=0;i<requests.length;i++){
-    const result=await requests[i];
+    const result=await requests[i];setCacheRequests(n=>n+1);if(result.cache==='HIT')setCacheHits(n=>n+1);
     if(i===0){setTts(Math.round(performance.now()-started));setTtsEngine(Number.isFinite(result.synth)?result.synth:null);}
     const url=URL.createObjectURL(result.blob);
     const player=new Audio(url);audio.current=player;player.volume=1;
@@ -109,6 +110,7 @@ function App(){
  }
  const checks=[['Your name?',lead.name],['Kitchen or bathroom?',lead.project],['What is your budget?',lead.budget],['What needs remodeling?',lead.scope],['When do you want to start?',lead.timeline],['Where is the property?',lead.location],['Approximate room size?',lead.size],['Top design priority?',lead.priority]];
  const next=checks.find(x=>!x[1]);
+ const p50=values=>{const v=values.filter(x=>x!=null).sort((a,b)=>a-b);return v.length?v[Math.floor((v.length-1)/2)]:null};
  const p95=values=>{const v=values.filter(x=>x!=null).sort((a,b)=>a-b);return v.length?v[Math.ceil(v.length*.95)-1]:null};
  const progress=Math.round(checks.filter(x=>x[1]).length/checks.length*100);
  const status=listening?'Listening':speaking?'Speaking':busy?'Thinking':'Ready';
@@ -124,7 +126,7 @@ function App(){
  {error&&<div className="error">{error}</div>}
  <form className="composer" onSubmit={e=>{e.preventDefault();send()}}><input placeholder="Ask about your remodeling project..." value={input} onChange={e=>setInput(e.target.value)}/><button type="button" className="sound" onClick={()=>{setMuted(!muted);if(audio.current&&!muted){audio.current.pause();setSpeaking(false)}}}>{muted?<VolumeX size={21}/>:<Volume2 size={21}/>}</button><button type="submit" disabled={busy||!input.trim()} className="send"><Send size={21}/></button></form>
  </section></main>}
- {view==="Performance"&&<main className="center performancepage"><h1>Voice AI Performance</h1><p>Live local measurements; no simulated values.</p><div className="metricgrid"><div><small>Time to first audio</small><strong>{ttfa===null?'—':ttfa+' ms'}</strong></div><div><small>Backend response (rules)</small><strong>{llm===null?'—':llm+' ms'}</strong></div><div><small>Piper synthesis</small><strong>{ttsEngine===null?'—':ttsEngine+' ms'}</strong></div><div><small>Audio request</small><strong>{tts===null?'—':tts+' ms'}</strong></div><div><small>Listening + recognition*</small><strong>{stt===null?'—':stt+' ms'}</strong></div><div><small>TTFA P95</small><strong>{p95(samples.map(x=>x.ttfa))===null?'—':p95(samples.map(x=>x.ttfa))+' ms'}</strong></div></div><p className="metricnote">TTFA starts when text is submitted and ends when audio playback begins. Recognition includes time spent listening, so it is not pure STT latency. The backend currently uses deterministic rules, not Gemma inference. P95 uses only recorded audio turns; true VAD is not instrumented.</p></main>}
+ {view==="Performance"&&<main className="center performancepage"><h1>Voice AI Performance</h1><p>Live local measurements; no simulated values.</p><div className="metricgrid"><div><small>Time to first audio</small><strong>{ttfa===null?'—':ttfa+' ms'}</strong></div><div><small>Backend response (rules)</small><strong>{llm===null?'—':llm+' ms'}</strong></div><div><small>Piper synthesis</small><strong>{ttsEngine===null?'—':ttsEngine+' ms'}</strong></div><div><small>Audio request</small><strong>{tts===null?'—':tts+' ms'}</strong></div><div><small>Listening + recognition*</small><strong>{stt===null?'—':stt+' ms'}</strong></div><div><small>TTFA P95</small><strong>{p95(samples.map(x=>x.ttfa))===null?'—':p95(samples.map(x=>x.ttfa))+' ms'}</strong></div></div><p className="metricnote">TTFA P50: {p50(samples.map(x=>x.ttfa))??'—'} ms · Cache hit rate: {cacheRequests?Math.round(100*cacheHits/cacheRequests)+'%':'—'} · Recognized turns: {recognitionSuccess} · Recognition retries: {recognitionRetries}</p><p className="metricnote">TTFA starts when text is submitted and ends when audio playback begins. Recognition includes time spent listening, so it is not pure STT latency. The backend currently uses deterministic rules, not Gemma inference. P95 uses only recorded audio turns; true VAD is not instrumented.</p></main>}
  {view==="Conversation"&&<aside className="insights"><div className="topbar"><span className="online"><span className="dot"/> Shekhar Online</span><Settings size={19}/></div>
  <div className="panel consultant"><div className="consultantrow"><div className={"consultantavatar "+(speaking?"talking":"")}><img src="/shekhar-avatar.jpg" alt="Shekhar AI" onError={e=>e.currentTarget.style.display='none'}/></div><div><b>Shekhar AI</b><small>Virtual Remodeling Consultant</small><span className="consultantstatus">{speaking?'Speaking':listening?'Listening':'Available'}</span></div></div></div>
  {contact&&<div className="panel contactpanel"><h3>Consultation Summary</h3><p><b>{lead.name}</b> · {lead.project} · {lead.budget}</p><small>{lead.scope} · {lead.timeline} · {lead.location}</small><p>Contact: {contact.value}</p><div className="contactactions"><button onClick={()=>{const subject=encodeURIComponent('Remodeling consultation request');const body=encodeURIComponent('Homeowner: '+lead.name+'\nProject: '+lead.project+'\nBudget: '+lead.budget+'\nScope: '+lead.scope+'\nTimeline: '+lead.timeline+'\nCity: '+lead.location+'\nContact: '+contact.value);window.location.href='mailto:'+(contact.type==='email'?contact.value:'')+'?subject='+subject+'&body='+body}}>Send Email</button><button onClick={()=>{const body=encodeURIComponent('Remodeling consultation request for '+lead.name+': '+lead.project+', '+lead.budget+', '+lead.location+'.');window.location.href='sms:'+(contact.type==='phone'?contact.value:'')+'?body='+body}}>Send Text</button></div><small>Opens your email or messaging app for review; no automatic delivery.</small></div>}
