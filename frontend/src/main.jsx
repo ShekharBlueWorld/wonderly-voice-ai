@@ -51,22 +51,52 @@ function App(){
    if(!mutedRef.current){await playSpeech(data.reply,start);}else{setSamples(prev=>[...prev.slice(-29),{llm:data.llm_ms,ttfa:null}]);}
   }catch(e){const msg=e instanceof TypeError?'Cannot reach the local backend at http://127.0.0.1:8000. Restart FastAPI and check /api/health.':e.message;setError(msg);autoRef.current=false;setAutoMode(false);recognition.current?.abort();recognitionActive.current=false;setListening(false);}finally{setBusy(false);busyRef.current=false;if(autoRef.current&&!speakingRef.current)startListening();}
  }
+ // Split long replies on sentence boundaries; synthesize ahead while the first plays.
+ function speechChunks(text){
+  const sentences=text.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[text];
+  const chunks=[];
+  for(const sentence of sentences){
+   const part=sentence.trim();
+   if(!part)continue;
+   if(chunks.length && chunks[chunks.length-1].length+part.length+1<=105)chunks[chunks.length-1]+=' '+part;
+   else chunks.push(part);
+  }
+  return chunks.length?chunks:[text];
+ }
  async function playSpeech(text,turnStartTime){
-  const start=performance.now();
-  const response=await fetch(API+'/api/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
-  if(!response.ok){const data=await response.json();throw Error(data.detail||'Voice failed');}
-  const blob=await response.blob();setTts(Math.round(performance.now()-start));
-  const synth=Number(response.headers.get('X-TTS-Synthesis-Ms'));if(Number.isFinite(synth)&&synth>0)setTtsEngine(synth);
-  const url=URL.createObjectURL(blob);const player=new Audio(url);audio.current=player;
-  setSpeaking(true);speakingRef.current=true;player.onended=()=>{setSpeaking(false);speakingRef.current=false;setMouth(0);cancelAnimationFrame(animationRef.current);URL.revokeObjectURL(url);if(autoRef.current&&!busyRef.current)startListening()};
-  player.onerror=()=>{setSpeaking(false);speakingRef.current=false;setMouth(0);cancelAnimationFrame(animationRef.current);URL.revokeObjectURL(url);if(autoRef.current&&!busyRef.current)startListening()};
+  const chunks=speechChunks(text);
+  const started=performance.now();
+  // Start the next request immediately; the backend serializes Piper synthesis.
+  const requests=chunks.map(chunk=>fetch(API+'/api/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:chunk})}).then(async response=>{
+   if(!response.ok){const data=await response.json();throw Error(data.detail||'Voice failed');}
+   return {blob:await response.blob(),synth:Number(response.headers.get('X-TTS-Synthesis-Ms')),cache:response.headers.get('X-TTS-Cache')};
+  }));
+  setSpeaking(true);speakingRef.current=true;
   try{
-   player.volume=1;
-   await player.play();
-   const first=Math.round(performance.now()-turnStartTime);
-   setTtfa(first);
-   setSamples(prev=>[...prev.slice(-29),{llm:Math.round(start-turnStartTime),ttfa:first}]);
-   }catch(e){setSpeaking(false);speakingRef.current=false;setMouth(0);cancelAnimationFrame(animationRef.current);URL.revokeObjectURL(url);throw e;}
+   for(let i=0;i<requests.length;i++){
+    const result=await requests[i];
+    if(i===0){setTts(Math.round(performance.now()-started));setTtsEngine(Number.isFinite(result.synth)?result.synth:null);}
+    const url=URL.createObjectURL(result.blob);
+    const player=new Audio(url);audio.current=player;player.volume=1;
+    try{
+     await new Promise((resolve,reject)=>{
+      player.onended=resolve;player.onerror=()=>reject(Error('Audio playback failed'));
+      player.play().then(()=>{
+       if(i===0){
+        const first=Math.round(performance.now()-turnStartTime);
+        setTtfa(first);
+        setSamples(prev=>[...prev.slice(-29),{llm:Math.round(started-turnStartTime),ttfa:first}]);
+       }
+      }).catch(reject);
+     });
+    }finally{URL.revokeObjectURL(url);}
+    if(!speakingRef.current)break;
+   }
+  }finally{
+   setSpeaking(false);speakingRef.current=false;setMouth(0);
+   cancelAnimationFrame(animationRef.current);
+   if(autoRef.current&&!busyRef.current)startListening();
+  }
  }
  function toggleMic(){
   if(listening){recognition.current?.stop();setListening(false);return;}
