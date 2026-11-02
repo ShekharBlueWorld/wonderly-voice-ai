@@ -83,7 +83,7 @@ function App(){
     const player=new Audio(url);audio.current=player;player.volume=1;
     try{
      await new Promise((resolve,reject)=>{
-      player.onended=resolve;player.onerror=()=>reject(Error('Audio playback failed'));
+      player.onended=resolve;player.onpause=resolve;player.onerror=()=>reject(Error('Audio playback failed'));
       player.play().then(()=>{
        if(i===0){
         const first=Math.round(performance.now()-turnStartTime);
