@@ -71,7 +71,9 @@ def answer_field(key, value):
     if not s:
         return None
     if key == "name":
-        candidate = re.sub(r"^(?:my name is|i am|i'm|it's|this is|call me|my name's|name is)\s+", "", s, flags=re.I).strip()
+        # Recognize natural first-turn introductions, including speech punctuation.
+        value = re.sub(r"^(?:hello|hi|hey)[,!. ]+", "", s, flags=re.I)
+        candidate = re.sub(r"^(?:my name is|i am|i'm|it's|this is|call me|my name's|name is)\s+", "", value, flags=re.I).strip()
         return candidate.title() if re.fullmatch(r"[A-Za-z][A-Za-z '-]{0,40}",candidate) and len(candidate.split()) <= 4 else None
     if key == "project":
         return "Kitchen" if "kitchen" in low else "Bathroom" if "bathroom" in low else None
