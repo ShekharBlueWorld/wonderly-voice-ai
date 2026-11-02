@@ -1,0 +1,9 @@
+{
+  "name": "wonderly-voice-ai-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {"dev": "vite --host 127.0.0.1", "build": "vite build", "preview": "vite preview"},
+  "dependencies": {"vite": "^6.1.0", "react": "^19.0.0", "react-dom": "^19.0.0", "lucide-react": "^0.468.0"},
+  "devDependencies": {}
+}
