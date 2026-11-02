@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from piper.config import SynthesisConfig
 
 ROOT = Path(__file__).resolve().parents[1]
 VOICE_DIR = ROOT / "voice"
@@ -71,7 +72,9 @@ def answer_field(key, value):
     if not s:
         return None
     if key == "name":
-        candidate = re.sub(r"^(?:my name is|i am|i'm|it's|this is|call me|my name's|name is)\s+", "", s, flags=re.I).strip()
+        # Recognize natural first-turn introductions, including speech punctuation.
+        value = re.sub(r"^(?:hello|hi|hey)[,!. ]+", "", s, flags=re.I)
+        candidate = re.sub(r"^(?:my name is|i am|i'm|it's|this is|call me|my name's|name is)\s+", "", value, flags=re.I).strip()
         return candidate.title() if re.fullmatch(r"[A-Za-z][A-Za-z '-]{0,40}",candidate) and len(candidate.split()) <= 4 else None
     if key == "project":
         return "Kitchen" if "kitchen" in low else "Bathroom" if "bathroom" in low else None
@@ -238,7 +241,12 @@ _VOICE_ERROR = None
 _VOICE_LOCK = threading.Lock()
 _CACHE_LOCK = threading.Lock()
 _AUDIO_CACHE = OrderedDict()
-_CACHE_LIMIT = 64
+_CACHE_LIMIT = 256
+WELCOME_TEXT = "Hi! I'm Shekhar AI, your virtual remodeling consultant. May I have your name?"
+PREWARM_TEXTS = [WELCOME_TEXT, "Nice to meet you!", "Sounds good!", "Got it."] + [question for _, question in FIELDS]
+
+def cache_key(text):
+    return " ".join(text.split())
 
 def get_voice():
     global _VOICE, _VOICE_ERROR
@@ -262,7 +270,7 @@ def synthesize_audio(text):
     voice = get_voice()
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as wav_file:
-        voice.synthesize_wav(text, wav_file)
+        voice.synthesize_wav(text, wav_file, syn_config=SynthesisConfig(length_scale=1.12))
     return buffer.getvalue()
 
 @app.on_event("startup")
@@ -270,6 +278,18 @@ def preload_voice():
     # Warm the model once on server startup, before the first conversation.
     try:
         get_voice()
+        def prime():
+            for phrase in PREWARM_TEXTS:
+                try:
+                    key = cache_key(phrase)
+                    with _VOICE_LOCK:
+                        audio = synthesize_audio(phrase)
+                    with _CACHE_LOCK:
+                        _AUDIO_CACHE[key] = audio
+                        _AUDIO_CACHE.move_to_end(key)
+                except Exception as exc:
+                    print(f"Piper audio prewarm failed: {exc}", file=sys.stderr)
+        threading.Thread(target=prime, daemon=True).start()
     except Exception as exc:
         print(f"Piper preload failed; speech will report the error: {exc}", file=sys.stderr)
 
@@ -279,7 +299,7 @@ class SpeechRequest(BaseModel):
 @app.post("/api/speak")
 def speak(body: SpeechRequest):
     from fastapi.responses import Response
-    text = body.text.strip()
+    text = cache_key(body.text)
     if not text:
         raise HTTPException(status_code=422, detail="Speech text cannot be blank")
     start = time.perf_counter()
