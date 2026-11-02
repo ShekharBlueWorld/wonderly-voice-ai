@@ -60,13 +60,9 @@ function App(){
  // Split long replies on sentence boundaries; synthesize ahead while the first plays.
  function speechChunks(text){
   const sentences=text.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[text];
-  const chunks=[];
-  for(const sentence of sentences){
-   const part=sentence.trim();
-   if(!part)continue;
-   if(chunks.length && chunks[chunks.length-1].length+part.length+1<=105)chunks[chunks.length-1]+=' '+part;
-   else chunks.push(part);
-  }
+  // Keep sentence-sized chunks separate so reusable prompts can hit Piper's
+  // server-side audio cache and the first short sentence can play earlier.
+  const chunks=sentences.map(sentence=>sentence.trim()).filter(Boolean);
   return chunks.length?chunks:[text];
  }
  async function playSpeech(text,turnStartTime){
