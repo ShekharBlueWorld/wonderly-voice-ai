@@ -110,7 +110,9 @@ def chat(body: ChatRequest):
             answer = json.load(response)["response"].strip()
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Local Ollama unavailable: {exc}")
-    if next_question.lower() not in answer.lower():\n        answer = answer.rstrip() + " " + next_question\n    return {"reply":answer, "llm_ms":round((time.perf_counter()-start)*1000),
+    if next_question.lower() not in answer.lower():
+        answer = answer.rstrip() + " " + next_question
+    return {"reply":answer, "llm_ms":round((time.perf_counter()-start)*1000),
             "lead":lead}
 
 class SpeechRequest(BaseModel):
