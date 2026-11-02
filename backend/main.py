@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from piper.config import SynthesisConfig
 
 ROOT = Path(__file__).resolve().parents[1]
 VOICE_DIR = ROOT / "voice"
@@ -269,7 +270,7 @@ def synthesize_audio(text):
     voice = get_voice()
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as wav_file:
-        voice.synthesize_wav(text, wav_file)
+        voice.synthesize_wav(text, wav_file, syn_config=SynthesisConfig(length_scale=1.12))
     return buffer.getvalue()
 
 @app.on_event("startup")
